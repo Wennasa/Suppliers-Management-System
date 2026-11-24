@@ -447,6 +447,18 @@ body.logged-out .layout { display: none; }
 [hidden] { display: none !important; }
 .u-cell { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
 
+/* ---------- قائمة المستندات الرسمية ---------- */
+.sec-body.only-docs { display: block; }
+.doc-check { display: grid; gap: 18px; }
+.dc-title { font-weight: 700; font-size: 13.5px; color: var(--muted); margin-bottom: 6px; }
+.dc-row { display: flex; gap: 12px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; margin-bottom: 8px; }
+.dc-row.has { background: var(--ok-50); border-color: #bfe3cf; }
+.dc-row.miss { border-color: var(--danger); border-style: dashed; }
+.dc-ico { font-size: 20px; width: 34px; text-align: center; flex: none; }
+.dc-main { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.dc-st { flex: none; font-size: 12.5px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.dc-st.ok { color: var(--ok); } .dc-st.miss { color: var(--danger); }
+
 /* ---- تكييف المنصة ---- */
 :root { color-scheme: light; }
 body { background: var(--bg); color: var(--text); }
@@ -572,12 +584,21 @@ const ACTIVITIES = ["مقاولات عامة ومباني", "توريد مواد
 const LEGAL_FORMS = ["شركة مساهمة", "شركة ذات مسؤولية محدودة", "شركة تضامن", "شركة توصية بسيطة", "منشأة فردية", "فرع شركة أجنبية"];
 const CITIES = ["طرابلس", "بنغازي", "مصراتة", "الزاوية", "زليتن", "الخمس", "سبها", "البيضاء", "طبرق", "سرت", "غريان", "صبراتة", "درنة", "أجدابيا"];
 const ROLES = ["Procurement", "Finance", "Legal", "Management", "Admin"];
-const DOC_TYPE_NAMES = ["CommercialRegistry", "PracticeLicense", "RealEstateRegistry", "IncorporationContract", "TaxCertificate", "ChamberCertificate", "BankLetter", "Other"];
+// دليل المستندات: [الاسم، إلزامي؟، المرحلة التي تشترطه]
+const DOC_CATALOG = {
+  CommercialRegistry: ["السجل التجاري", true, "legal"], PracticeLicense: ["إذن مزاولة النشاط", true, "legal"], RealEstateRegistry: ["السجل العقاري / سند المقر", true, "legal"],
+  IncorporationContract: ["عقد التأسيس والنظام الأساسي", false, null], TaxCertificate: ["شهادة السداد الضريبي", true, "financial"], BankLetter: ["الإفادة المصرفية برأس المال", true, "financial"],
+  SocialSecurityCertificate: ["شهادة الضمان الاجتماعي", false, null], AuditedFinancials: ["القوائم المالية المدققة", false, null], ChamberCertificate: ["شهادة الغرفة التجارية", false, null],
+  SignatoryAuthorization: ["تفويض المفوض بالتوقيع", false, null], QualityCertificate: ["شهادات الجودة والخبرات", false, null], ClassificationCertificate: ["شهادة التصنيف / الوكالة", false, null], Other: ["وثائق أخرى", false, null]
+};
+const DOC_TYPE_NAMES = Object.keys(DOC_CATALOG);
 const STATUS_AR = { PendingVerification: "قيد المراجعة", Qualified: "نشط ومؤهل", Returned: "مُرجع للتصحيح", Suspended: "موقوف", Rejected: "مرفوض" };
 const APPROVAL_AR = { Approved: "معتمد", Returned: "مُرجع", Pending: "بانتظار" };
-const DB_KEY = "ss.demo.db.v5", FILES_KEY = "ss.demo.files.v5";
-const CORE_DOC_TYPES = ["CommercialRegistry", "PracticeLicense", "RealEstateRegistry", "IncorporationContract"];
-const DOC_AR = { CommercialRegistry: "السجل التجاري", PracticeLicense: "إذن مزاولة النشاط", RealEstateRegistry: "السجل العقاري", IncorporationContract: "عقد التأسيس" };
+const DB_KEY = "ss.demo.db.v6", FILES_KEY = "ss.demo.files.v6";
+const CORE_DOC_TYPES = DOC_TYPE_NAMES.filter(t => DOC_CATALOG[t][1]);
+const stageDocs = st => DOC_TYPE_NAMES.filter(t => DOC_CATALOG[t][1] && DOC_CATALOG[t][2] === st);
+const missingDocsOf = (s, types) => types.filter(t => !DB.documents.some(d => d.supplierId === s.id && d.type === t));
+const DOC_AR = Object.fromEntries(DOC_TYPE_NAMES.map(t => [t, DOC_CATALOG[t][0]]));
 const INPUT_FIELDS = ["nameAr", "nameEn", "legalForm", "city", "address", "phone", "email", "website", "contactPerson", "contactPhone", "mainActivity", "subActivities", "commercialRegNo", "commercialRegOffice", "commercialRegIssueDate", "commercialRegExpiryDate", "chamberNo", "taxNo", "practiceLicenseNo", "practiceLicenseAuthority", "practiceLicenseIssueDate", "practiceLicenseExpiryDate", "realEstateRegNo", "realEstateOffice", "realEstateRegDate", "premisesOwnership", "leaseExpiryDate", "propertyDescription", "incorporationContractNo", "incorporationDate", "notaryOffice", "authorizedSignatory", "partners", "capital", "paidUpCapital", "bankName", "bankAccount"];
 
 // ---------- تواريخ (صيغة yyyy-mm-dd بتوقيت UTC) ----------
@@ -662,7 +683,7 @@ function buildSeed() {
       case "license-expired": s.practiceLicenseExpiryDate = shift(t, { d: -40 }); break;
       case "pending": s.status = "PendingVerification"; clearFin(); clearLeg(); clearAct(); break;
       case "activation-pending": s.status = "PendingVerification"; clearAct(); break;
-      case "returned": s.status = "Returned"; s.legalApproval = "Returned"; clearAct(); s.legalNotes = "عقد التأسيس المرفق غير موثق - يرجى إرفاق نسخة موثقة من مكتب التوثيق."; break;
+      case "returned": s.status = "Returned"; s.legalApproval = "Returned"; clearAct(); s.legalNotes = "سند المقر المرفق غير واضح - يرجى إرفاق نسخة مصدقة من السجل العقاري."; break;
       case "expiring": s.commercialRegExpiryDate = shift(t, { d: 18 }); s.practiceLicenseExpiryDate = shift(t, { d: 45 }); break;
       case "incomplete": s.status = "PendingVerification"; s.incorporationContractNo = null; s.realEstateRegNo = null; clearFin(); clearLeg(); clearAct(); break;
       case "suspended": s.status = "Suspended"; s.legalNotes = "إيقاف مؤقت لحين تسوية ملاحظات المراجعة الداخلية."; break;
@@ -685,9 +706,11 @@ async function initDb(force) {
   }
   if (!DB || force) {
     const suppliers = buildSeed(), documents = [];
-    const names = { CommercialRegistry: "commercial-registry", PracticeLicense: "practice-license", RealEstateRegistry: "real-estate-deed", IncorporationContract: "incorporation-contract", BankLetter: "bank-letter" };
+    const names = { CommercialRegistry: "commercial-registry", PracticeLicense: "practice-license", RealEstateRegistry: "real-estate-deed", IncorporationContract: "incorporation-contract", BankLetter: "bank-letter", TaxCertificate: "tax-certificate", SocialSecurityCertificate: "social-security", ChamberCertificate: "chamber-certificate" };
     suppliers.forEach(sp => Object.entries(names).forEach(([type, nm]) => {
       if (!sp.incorporationContractNo && (type === "RealEstateRegistry" || type === "IncorporationContract")) return;
+      if (sp.code === "SUP-0025" && type === "TaxCertificate") return; // قيد المراجعة المالية ولم يُرفق شهادة السداد الضريبي
+      if ((type === "SocialSecurityCertificate" || type === "ChamberCertificate") && sp.id % 3 !== 0) return;
       documents.push({ id: documents.length + 1, supplierId: sp.id, type, fileName: nm + ".pdf", contentType: "application/pdf", size: 620, uploadedAt: sp.createdAt, uploadedBy: "مسؤول المشتريات", stored: false, sample: true });
     }));
     const users = [];
@@ -754,7 +777,6 @@ function missingCore(x) {
   const m = [];
   if (!x.commercialRegNo) m.push("السجل التجاري");
   if (!x.practiceLicenseNo) m.push("مزاولة النشاط");
-  if (!x.incorporationContractNo) m.push("عقد التأسيس");
   if (!x.realEstateRegNo) m.push("السجل العقاري");
   if (!(x.capital > 0)) m.push("رأس المال");
   if (!x.mainActivity) m.push("النشاط");
@@ -980,17 +1002,21 @@ const ROUTES = [
     let stage;
     if (r.track === "financial") {
       if (!can(u, "Finance")) forbid("المراجعة المالية من صلاحية المراجع المالي");
+      const fd = missingDocsOf(s, stageDocs("financial"));
+      if (approve && fd.length) fail(400, "لا يمكن الاعتماد المالي قبل إرفاق: " + fd.map(t => DOC_AR[t]).join("، "));
       Object.assign(s, { financialApproval: state, financialApprovedBy: u.name, financialApprovedAt: nowIso(), financialNotes: r.notes || null }); stage = "المراجعة المالية";
     } else if (r.track === "legal") {
       if (!can(u, "Legal")) forbid("المراجعة القانونية من صلاحية المستشار القانوني");
       if (s.financialApproval !== "Approved") fail(400, "يجب اعتماد المراجعة المالية أولاً");
       const miss = missingCore(s);
       if (approve && miss.length) fail(400, "لا يمكن الاعتماد قبل استكمال: " + miss.join("، "));
+      const ld = missingDocsOf(s, stageDocs("legal"));
+      if (approve && ld.length) fail(400, "لا يمكن الاعتماد القانوني قبل إرفاق: " + ld.map(t => DOC_AR[t]).join("، "));
       Object.assign(s, { legalApproval: state, legalApprovedBy: u.name, legalApprovedAt: nowIso(), legalNotes: r.notes || null }); stage = "المراجعة القانونية";
     } else if (r.track === "activation") {
       if (!can(u, "Management")) forbid("اعتماد التفعيل من صلاحية إدارة الفرع");
       if (s.financialApproval !== "Approved" || s.legalApproval !== "Approved") fail(400, "يجب اكتمال المراجعتين المالية والقانونية قبل اعتماد التفعيل");
-      const missDocs = CORE_DOC_TYPES.filter(t => !DB.documents.some(d => d.supplierId === s.id && d.type === t));
+      const missDocs = missingDocsOf(s, CORE_DOC_TYPES);
       if (approve && missDocs.length) fail(400, "لا يمكن التفعيل قبل إرفاق المستندات اللازمة: " + missDocs.map(t => DOC_AR[t]).join("، "));
       Object.assign(s, { activationApproval: state, activationApprovedBy: u.name, activationApprovedAt: nowIso(), activationNotes: r.notes || null }); stage = "اعتماد التفعيل";
     } else fail(400, "مسار غير معروف");
@@ -1227,12 +1253,26 @@ const STATUS = {
 const APPROVAL = { Pending: ["بانتظار", "b-warn"], Approved: ["معتمد", "b-ok"], Returned: ["مُرجع", "b-danger"] };
 const TIER_NAME = { A: "فئة (أ) — كبرى", B: "فئة (ب) — متوسطة", C: "فئة (ج) — صغرى", U: "غير مصنف" };
 const ROLE_NAME = { Procurement: "مسؤول المشتريات", Finance: "المراجع المالي", Legal: "المستشار القانوني", Management: "إدارة الفرع", Admin: "مدير النظام" };
+/** دليل المستندات: [الاسم، الأيقونة، إلزامي؟، المجموعة، المرحلة التي تشترطه، وصف]. */
 const DOC_TYPES = {
-  CommercialRegistry: ["السجل التجاري", "📄", true], PracticeLicense: ["إذن مزاولة النشاط", "🪪", true],
-  RealEstateRegistry: ["السجل العقاري / سند المقر", "🏢", true], IncorporationContract: ["عقد التأسيس والنظام الأساسي", "📜", true],
-  TaxCertificate: ["شهادة السداد الضريبي", "🧾", false], ChamberCertificate: ["شهادة الغرفة التجارية", "🏛", false],
-  BankLetter: ["إفادة مصرفية برأس المال", "🏦", false], Other: ["وثائق أخرى", "📎", false]
+  CommercialRegistry: ["السجل التجاري", "📄", true, "legal", "legal", "ساري حتى تاريخ إقفال المناقصة"],
+  PracticeLicense: ["إذن مزاولة النشاط", "🪪", true, "legal", "legal", "صادر من الجهة المختصة بالنشاط"],
+  RealEstateRegistry: ["السجل العقاري / سند المقر", "🏢", true, "legal", "legal", "ملكية المقر أو عقد إيجاره"],
+  IncorporationContract: ["عقد التأسيس والنظام الأساسي", "📜", false, "legal", null, "الشكل القانوني والشركاء"],
+  TaxCertificate: ["شهادة السداد الضريبي", "🧾", true, "financial", "financial", "براءة ذمة سارية من مصلحة الضرائب"],
+  BankLetter: ["الإفادة المصرفية برأس المال", "🏦", true, "financial", "financial", "تؤكد الحساب ورأس المال المودع"],
+  SocialSecurityCertificate: ["شهادة الضمان الاجتماعي", "🛡", false, "financial", null, "براءة ذمة من صندوق الضمان"],
+  AuditedFinancials: ["القوائم المالية المدققة", "📊", false, "financial", null, "ميزانية آخر سنة مالية"],
+  ChamberCertificate: ["شهادة الغرفة التجارية", "🏛", false, "additional", null, "القيد في غرفة التجارة والصناعة"],
+  SignatoryAuthorization: ["تفويض المفوض بالتوقيع", "✍", false, "additional", null, "مع إثبات هوية المفوض"],
+  QualityCertificate: ["شهادات الجودة والخبرات", "🏅", false, "additional", null, "مثل ISO وشهادات إنجاز الأعمال"],
+  ClassificationCertificate: ["شهادة التصنيف / الوكالة", "🏷", false, "additional", null, "تصنيف المقاولين أو الوكالة التجارية"],
+  Other: ["وثائق أخرى", "📎", false, "additional", null, ""]
 };
+const DOC_GROUPS = { legal: "المستندات القانونية", financial: "المستندات المالية والضريبية", additional: "مستندات إضافية" };
+const STAGE_NAME = { financial: "المراجعة المالية", legal: "المراجعة القانونية" };
+const docsOfStage = st => Object.keys(DOC_TYPES).filter(k => DOC_TYPES[k][2] && DOC_TYPES[k][4] === st);
+const docReqBadge = t => DOC_TYPES[t]?.[2] ? `<span class="badge b-info no-dot">إلزامي · قبل ${STAGE_NAME[DOC_TYPES[t][4]]}</span>` : `<span class="badge no-dot">اختياري</span>`;
 const statusBadge = s => `<span class="badge ${STATUS[s]?.[1] || ""}">${STATUS[s]?.[0] || s}</span>`;
 const approvalBadge = s => `<span class="badge ${APPROVAL[s]?.[1] || ""}">${APPROVAL[s]?.[0] || s}</span>`;
 const tierBadge = (t, lg) => `<span class="tier tier-${t} ${lg ? "tier-lg" : ""}" title="${TIER_NAME[t]}">${{ A: "أ", B: "ب", C: "ج", U: "—" }[t]}</span>`;
@@ -1646,12 +1686,14 @@ const SECTIONS = [
   { key: "cr", title: "النشاط والسجل التجاري", icon: "📄", docs: ["CommercialRegistry", "ChamberCertificate"] },
   { key: "license", title: "إذن مزاولة النشاط", icon: "🪪", docs: ["PracticeLicense"] },
   { key: "realestate", title: "السجل العقاري للمقر", icon: "🏢", docs: ["RealEstateRegistry"] },
-  { key: "inc", title: "عقد التأسيس والشركاء", icon: "📜", docs: ["IncorporationContract"] },
-  { key: "fin", title: "البيانات المالية", icon: "💰", docs: ["BankLetter", "TaxCertificate"] },
+  { key: "inc", title: "عقد التأسيس والشركاء", icon: "📜", docs: ["IncorporationContract", "SignatoryAuthorization"] },
+  { key: "fin", title: "البيانات المالية والضريبية", icon: "💰", docs: ["TaxCertificate", "BankLetter", "SocialSecurityCertificate", "AuditedFinancials"] },
+  { key: "extra", title: "مستندات إضافية", icon: "📎", docs: ["QualityCertificate", "ClassificationCertificate", "Other"] },
 ];
-const CORE_DOCS = ["CommercialRegistry", "PracticeLicense", "RealEstateRegistry", "IncorporationContract"];
+const CORE_DOCS = Object.keys(DOC_TYPES).filter(k => DOC_TYPES[k][2]);
 
 const FIELDS = {
+  extra: [],
   basic: [
     { k: "nameAr", l: "اسم المورد (بالعربية)", req: true, full: true, ph: "كما ورد في السجل التجاري" },
     { k: "nameEn", l: "الاسم باللغة الإنجليزية", ltr: true },
@@ -1757,9 +1799,9 @@ async function renderWizard(id) {
     const ess = ESSENTIALS.filter(f => filled(data[f.k])).length, coreDocs = CORE_DOCS.filter(hasDoc).length;
     const pctv = Math.round(ess / ESSENTIALS.length * 100);
     return `<div class="row between"><b>${ess === ESSENTIALS.length ? "✓ جاهز للحفظ" : "البيانات الأساسية الإلزامية"} <span class="num">${ess}</span> من ${ESSENTIALS.length}</b>
-        <span class="muted small">مستندات مرفقة: <span class="num">${coreDocs}</span> من ${CORE_DOCS.length} (مطلوبة قبل التفعيل، ويمكن إرفاقها لاحقاً)</span></div>
+        <span class="muted small">المستندات الإلزامية المرفقة: <span class="num">${coreDocs}</span> من ${CORE_DOCS.length} (تُشترط عند المراجعة، ويمكن إرفاقها لاحقاً)</span></div>
       <div class="progress" style="margin:8px 0 10px"><div style="width:${pctv}%"></div></div>
-      <div class="chips">${SECTIONS.map(s => { const ok = hasRequired(s.key) ? sectionDone(s.key) : sectionFilled(s.key); return `<button type="button" class="chip ${ok ? "on" : ""}" data-jump="${s.key}">${ok ? "✓ " : ""}${s.title}${hasRequired(s.key) ? "" : " · اختياري"}</button>`; }).join("")}</div>`;
+      <div class="chips">${SECTIONS.map(s => { const ok = hasRequired(s.key) ? sectionDone(s.key) : sectionFilled(s.key); return `<button type="button" class="chip ${ok ? "on" : ""}" data-jump="${s.key}">${ok ? "✓ " : ""}${s.title}${hasRequired(s.key) ? "" : s.docs.some(d => DOC_TYPES[d][2]) ? " · مستند إلزامي للمراجعة" : " · اختياري"}</button>`; }).join("")}</div>`;
   }
   function refresh() {
     $("#progress").innerHTML = progressHtml();
@@ -1771,10 +1813,10 @@ async function renderWizard(id) {
     : sectionDone(key) ? `<span class="badge b-ok" data-secbadge="${key}">مكتمل</span>` : `<span class="badge ${tried ? "b-danger" : "b-warn"}" data-secbadge="${key}">${tried ? "يحتاج استكمال" : "حقول إلزامية"}</span>`;
 
   function docSlot(t) {
-    const [label, ico, core] = DOC_TYPES[t];
+    const [label, ico] = DOC_TYPES[t];
     const existing = docs.filter(d => d.type === t), file = pending[t], has = file || existing.length;
     return `<label class="doc-slot ${has ? "has" : ""}" data-doc="${t}"><input type="file" accept=".pdf,.jpg,.jpeg,.png"><span class="ds-ico">${ico}</span>
-      <div style="flex:1;min-width:0"><b>${label}</b> ${core ? '<span class="badge b-info no-dot">مطلوب قبل التفعيل</span>' : '<span class="badge no-dot">اختياري</span>'}
+      <div style="flex:1;min-width:0"><b>${label}</b> ${docReqBadge(t)}
       <div class="muted small" style="overflow-wrap:anywhere">${file ? `سيُرفع: ${esc(file.name)}` : existing.length ? `مرفق: ${existing.map(d => esc(d.fileName)).join("، ")}` : "اضغط لاختيار ملف (PDF / JPG / PNG)"}</div></div>
       <span>${has ? "✓" : "⬆"}</span></label>`;
   }
@@ -1816,8 +1858,8 @@ async function renderWizard(id) {
     $("#sections").innerHTML = SECTIONS.map(s => `
       <section class="card form-section" id="sec-${s.key}">
         <div class="card-head"><h2>${s.icon} ${s.title}</h2>${secBadge(s.key)}</div>
-        <div class="card-body sec-body ${s.docs.length ? "" : "no-docs"}">
-          <div class="form-grid">${FIELDS[s.key].map(fieldHtml).join("")}${s.key === "fin" ? finExtra() : ""}</div>
+        <div class="card-body sec-body ${s.docs.length ? "" : "no-docs"} ${FIELDS[s.key].length ? "" : "only-docs"}">
+          ${FIELDS[s.key].length ? `<div class="form-grid">${FIELDS[s.key].map(fieldHtml).join("")}${s.key === "fin" ? finExtra() : ""}</div>` : ""}
           ${s.docs.length ? `<div class="sec-docs"><div class="lbl">📎 المستندات</div>${s.docs.map(docSlot).join("")}</div>` : ""}
         </div>
       </section>`).join("");
@@ -1916,17 +1958,17 @@ async function renderProfile(id) {
   crumbs("الموردون", `<a href="#suppliers">سجل الموردين</a>`, esc(s.nameAr));
   const kv = rows => `<div class="kv">${rows.map(([k, v]) => `<div><div class="k">${k}</div><div class="v">${v || '<span class="muted">—</span>'}</div></div>`).join("")}</div>`;
   const docsOf = t => s.documents.filter(d => d.type === t);
-  const docLinks = t => docsOf(t).length ? docsOf(t).map(d => `<button type="button" class="badge b-info no-dot" style="cursor:pointer;font-family:inherit" onclick="previewDoc(${d.id})">📎 ${esc(d.fileName)}</button>`).join(" ") : `<span class="badge b-warn no-dot">لم تُرفق الوثيقة</span>`;
+  const docLinks = t => docsOf(t).length ? docsOf(t).map(d => `<button type="button" class="badge b-info no-dot" style="cursor:pointer;font-family:inherit" onclick="previewDoc(${d.id})">📎 ${esc(d.fileName)}</button>`).join(" ") : DOC_TYPES[t]?.[2] ? `<span class="badge b-warn no-dot">لم تُرفق الوثيقة (إلزامية)</span>` : `<span class="badge no-dot">لم تُرفق (اختيارية)</span>`;
   const legal = (icon, title, type, rows, expiry) => `<div class="legal-card"><div class="lc-head"><div class="lc-title"><span class="lc-ico">${icon}</span>${title}</div>${expiry !== undefined ? validityBadge(expiry) : ""}</div>${kv(rows)}<div style="margin-top:12px">${docLinks(type)}</div></div>`;
   const canStatus = user.can("Legal", "Management");
   // سير عمل متسلسل في نفس الصفحة: المالي ← القانوني ← اعتماد التفعيل (إدارة الفرع)
   const STAGES = [
     { track: "financial", title: "المراجعة المالية", role: "Finance", state: s.financialApproval, by: s.financialApprovedBy, at: s.financialApprovedAt, notes: s.financialNotes,
-      checks: ["رأس المال المعلن مطابق للإفادة المصرفية", "التصنيف المالي صحيح: " + TIER_NAME[r.tier]] },
+      checks: ["شهادة السداد الضريبي والإفادة المصرفية مرفقتان", "رأس المال المعلن مطابق للإفادة المصرفية", "التصنيف المالي صحيح: " + TIER_NAME[r.tier]] },
     { track: "legal", title: "المراجعة القانونية", role: "Legal", state: s.legalApproval, by: s.legalApprovedBy, at: s.legalApprovedAt, notes: s.legalNotes,
-      checks: ["السجل التجاري وإذن مزاولة النشاط ساريان", "عقد التأسيس موثق والشركاء مطابقون", "سند المقر مسجل في السجل العقاري"] },
+      checks: ["السجل التجاري وإذن مزاولة النشاط ساريان ومرفقان", "سند المقر مسجل في السجل العقاري ومرفق", "بيانات السجلات مكتملة"] },
     { track: "activation", title: "اعتماد التفعيل", role: "Management", state: s.activationApproval, by: s.activationApprovedBy, at: s.activationApprovedAt, notes: s.activationNotes,
-      checks: ["اكتملت المراجعتان المالية والقانونية", "المستندات اللازمة للتفعيل مرفقة"] },
+      checks: ["اكتملت المراجعتان المالية والقانونية", "المستندات الإلزامية الخمسة مرفقة"] },
   ];
   const blocked = ["Suspended", "Rejected"].includes(s.status);
   const returnedIx = STAGES.findIndex(x => x.state === "Returned");
@@ -1941,14 +1983,16 @@ async function renderProfile(id) {
     const badge = x.state === "Approved" ? '<span class="badge b-ok">معتمد</span>' : x.state === "Returned" ? '<span class="badge b-danger">مُرجع</span>'
       : active ? '<span class="badge b-warn">بانتظار القرار</span>' : '<span class="badge">لم تبدأ</span>';
     const canAct = active && user.can(x.role);
-    const docsBlock = (x.track === "activation" && active && missingDocs.length) || (x.track === "legal" && active && r.missing.length);
+    const stageMissing = x.track === "activation" ? missingDocs : missingDocs.filter(t => DOC_TYPES[t]?.[4] === x.track);
+    const dataMissing = x.track === "legal" ? r.missing : [];
+    const docsBlock = active && (stageMissing.length || dataMissing.length);
     return `<div class="approval wf-box ${active ? "active" : ""} ${x.state === "Approved" ? "done" : ""}">
       <div class="row between"><b>${i + 1} · ${x.title}</b>${badge}</div>
       <div class="muted small" style="margin:4px 0">المسؤول: ${ROLE_NAME[x.role]}</div>
       ${x.by && x.state !== "Pending" ? `<div class="small">${x.state === "Approved" ? "اعتمده" : "أرجعه"}: ${esc(x.by)} · <span class="num">${fdt(x.at)}</span></div>` : ""}
       ${x.notes && x.state !== "Pending" ? `<div class="small" style="margin-top:4px">📝 ${esc(x.notes)}</div>` : ""}
       ${active ? `<ul class="wf-checks">${x.checks.map(c => `<li>☑ ${c}</li>`).join("")}</ul>` : ""}
-      ${docsBlock ? `<div class="callout danger small">${x.track === "legal" ? `لا يمكن الاعتماد القانوني قبل استكمال: ${r.missing.join("، ")}` : `لا يمكن التفعيل قبل إرفاق: ${missingDocs.map(t => DOC_TYPES[t]?.[0] || t).join("، ")}`}</div>` : ""}
+      ${docsBlock ? `<div class="callout danger small">لا يمكن ${x.track === "activation" ? "التفعيل" : "الاعتماد"} قبل ${[dataMissing.length ? `استكمال: ${dataMissing.join("، ")}` : "", stageMissing.length ? `إرفاق: ${stageMissing.map(t => DOC_TYPES[t]?.[0] || t).join("، ")}` : ""].filter(Boolean).join(" و")}${user.can("Procurement") ? ` · <a href="#supplier-${id}-edit">استكمال الملف</a>` : ""}</div>` : ""}
       ${canAct ? `<div class="row no-print" style="margin-top:10px"><button class="btn btn-sm btn-ok" data-rev="${x.track}" data-d="approve" ${docsBlock ? "disabled" : ""}>${x.track === "activation" ? "✓ اعتماد التفعيل" : "✓ اعتماد"}</button><button class="btn btn-sm btn-danger" data-rev="${x.track}" data-d="return">↩ إرجاع للتصحيح</button></div>`
         : active ? `<div class="muted small" style="margin-top:8px">بانتظار قرار «${ROLE_NAME[x.role]}» — غيّر الدور من أعلى الصفحة للتجربة.</div>` : ""}
     </div>`;
@@ -1978,7 +2022,7 @@ async function renderProfile(id) {
     ${stepper}
     ${r.alerts.length || r.missing.length || missingDocs.length ? `<div class="stack" style="margin-top:16px">
       ${r.missing.length ? `<div class="callout warn">⚠ بيانات لم تُستكمل بعد (مطلوبة قبل الاعتماد القانوني): ${r.missing.join("، ")}${user.can("Procurement") ? ` · <a href="#supplier-${id}-edit">استكمال البيانات</a>` : ""}</div>` : ""}
-      ${missingDocs.length ? `<div class="callout warn">📎 مستندات لم تُرفق بعد (مطلوبة قبل اعتماد التفعيل): ${missingDocs.map(t => DOC_TYPES[t]?.[0] || t).join("، ")}${user.can("Procurement") ? ` · <a href="#supplier-${id}-edit">إرفاق المستندات</a>` : ""}</div>` : ""}
+      ${missingDocs.length ? `<div class="callout warn">📎 مستندات إلزامية لم تُرفق بعد: ${missingDocs.map(t => `${DOC_TYPES[t]?.[0] || t} (قبل ${STAGE_NAME[DOC_TYPES[t]?.[4]] || "التفعيل"})`).join("، ")}${user.can("Procurement") ? ` · <a href="#supplier-${id}-edit">إرفاق المستندات</a>` : ""}</div>` : ""}
       ${r.alerts.map(a => `<div class="callout ${a.severity === "danger" ? "danger" : "warn"}">⏰ ${a.label}: ${a.days < 0 ? `منتهي منذ ${-a.days} يوم` : `ينتهي خلال ${a.days} يوم`} (${fdate(a.date)})</div>`).join("")}
     </div>` : ""}
   </div>
@@ -1997,10 +2041,20 @@ async function renderProfile(id) {
       <div class="card"><div class="card-head"><h2>البيانات المالية</h2></div><div class="card-body">
         ${kv([["رأس المال المعلن", money(s.capital)], ["رأس المال المدفوع", s.paidUpCapital ? `${money(s.paidUpCapital)} (${pct(s.paidUpCapital / s.capital * 100)})` : ""], ["الفئة", `${tierBadge(r.tier)} ${TIER_NAME[r.tier]}`], ["الحد الأقصى لقيمة المناقصة", money(r.maxTenderValue)], ["المصرف", esc(s.bankName)], ["رقم الحساب", `<span class="num">${esc(s.bankAccount)}</span>`]])}
       </div></div>
-      <div class="card"><div class="card-head"><h2>المستندات (${s.documents.length})</h2>
-        ${user.can("Procurement", "Legal", "Finance") ? `<div class="row no-print"><select class="select-sm" id="docType">${Object.entries(DOC_TYPES).map(([k, v]) => `<option value="${k}">${v[0]}</option>`).join("")}</select><label class="btn btn-sm btn-primary">⬆ رفع وثيقة<input type="file" id="docFile" accept=".pdf,.jpg,.jpeg,.png" hidden></label></div>` : ""}</div>
-        <div class="card-body">${s.documents.length ? s.documents.map(d => `<div class="doc-row"><span style="font-size:20px">${DOC_TYPES[d.type]?.[1] || "📎"}</span><div style="flex:1"><a href="#" onclick="event.preventDefault();previewDoc(${d.id})"><b>${esc(d.fileName)}</b></a><div class="muted small">${DOC_TYPES[d.type]?.[0]} · ${(d.size / 1024).toFixed(0)} KB · ${esc(d.uploadedBy || "")} · <span class="num">${fdt(d.uploadedAt)}</span></div></div>
-          ${user.can("Procurement") ? `<button class="btn btn-sm btn-ghost no-print" data-deldoc="${d.id}">✕</button>` : ""}</div>`).join("") : `<div class="empty" style="padding:20px">لا توجد وثائق مرفوعة — يُوصى بإرفاق صور السجل التجاري ومزاولة النشاط والسجل العقاري وعقد التأسيس.</div>`}</div></div>
+      <div class="card"><div class="card-head"><h2>قائمة المستندات الرسمية</h2>
+        <span class="badge ${missingDocs.length ? "b-warn" : "b-ok"}">الإلزامية: <span class="num">${CORE_DOCS.length - missingDocs.length}</span> من ${CORE_DOCS.length}</span>
+        ${user.can("Procurement", "Legal", "Finance") ? `<div class="row no-print"><select class="select-sm" id="docType">${Object.entries(DOC_TYPES).map(([k, v]) => `<option value="${k}">${v[0]}${v[2] ? " (إلزامي)" : ""}</option>`).join("")}</select><label class="btn btn-sm btn-primary">⬆ رفع وثيقة<input type="file" id="docFile" accept=".pdf,.jpg,.jpeg,.png" hidden></label></div>` : ""}</div>
+        <div class="card-body doc-check">${Object.entries(DOC_GROUPS).map(([g, gname]) => `
+          <div class="dc-group"><div class="dc-title">${gname}</div>
+          ${Object.keys(DOC_TYPES).filter(t => DOC_TYPES[t][3] === g).map(t => {
+            const files = s.documents.filter(d => d.type === t), req = DOC_TYPES[t][2];
+            const st = files.length ? `<span class="dc-st ok">✓ مرفق</span>` : req ? `<span class="dc-st miss">✕ غير مرفق</span>` : `<span class="dc-st">—</span>`;
+            return `<div class="dc-row ${files.length ? "has" : req ? "miss" : ""}"><span class="dc-ico">${DOC_TYPES[t][1]}</span>
+              <div class="dc-main"><div class="row" style="gap:8px"><b>${DOC_TYPES[t][0]}</b>${docReqBadge(t)}</div>
+                ${files.length ? files.map(d => `<div class="small"><a href="#" onclick="event.preventDefault();previewDoc(${d.id})">${esc(d.fileName)}</a> <span class="muted">· ${(d.size / 1024).toFixed(0)} KB · ${esc(d.uploadedBy || "")} · <span class="num">${fdt(d.uploadedAt)}</span></span>${user.can("Procurement") ? ` <button class="btn btn-sm btn-ghost no-print" data-deldoc="${d.id}" title="حذف الملف">✕</button>` : ""}</div>`).join("") : `<div class="muted small">${DOC_TYPES[t][5] || ""}</div>`}
+              </div>${st}</div>`;
+          }).join("")}</div>`).join("")}
+        </div></div>
     </div>
 
     <div class="stack">
